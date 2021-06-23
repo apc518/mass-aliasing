@@ -1,16 +1,45 @@
 import os
 import tkinter as tk
 from tkinter import filedialog
+from tkinter import messagebox
+from tkinter import ttk
+from tkinter.constants import HORIZONTAL
 
 root = tk.Tk()
-root.withdraw()
+root.option_add('*Font', '24')
+root.geometry("480x340")
+
+autopath = False
+
+app_title = "Mass Aliasing"
+
+total_samples_to_process = 0
+samples_processed = 0
 
 class WavFormatException(Exception):
     pass
 class ChannelException(Exception):
     pass
 
-autopath = False
+
+def samples_in_file(filepath):
+    wav_file = open(filepath, "rb")
+    wav_bytes = bytearray(wav_file.read())
+    wav_file.close()
+    if wav_bytes[0:4] != bytearray(b'RIFF') or wav_bytes[8:12] != bytearray(b'WAVE'):
+        raise WavFormatException(f"Inputted file \"{filepath}\" is not a valid wav file.")
+    
+    # because of the possibility of a JUNK chunk, we cannot assume 'fmt ' will be at index 12
+    fmt_offset = find_fmt_offset(wav_bytes)
+    if int.from_bytes(wav_bytes[20+fmt_offset:22+fmt_offset],'little',signed=False) != 1:
+        raise WavFormatException("Invalid audio format. Must be uncompressed wav.")
+    bit_depth = int.from_bytes(wav_bytes[34+fmt_offset:36+fmt_offset],'little',signed=False)
+    if bit_depth % 8 != 0:
+        raise WavFormatException("Invalid bit depth. The inputted wav file has a bit depth which isn't divisible by 8.")
+
+    data_bytes_num = int.from_bytes(wav_bytes[40+fmt_offset:44+fmt_offset],'little',signed=False)
+
+    return data_bytes_num * 8 / bit_depth
 
 def find_fmt_offset(wav_bytes):
     fmt_index = 0
@@ -23,6 +52,7 @@ def find_fmt_offset(wav_bytes):
     return fmt_index - 12
 
 def parse_sped_up(filepath, speed = 1):
+    global samples_processed, total_samples_to_process, progress_bar
     """returns the list of lists of floats which represents the wav file at filepath"""
     wav_file = open(filepath, "rb")
     wav_bytes = bytearray(wav_file.read())
@@ -52,11 +82,18 @@ def parse_sped_up(filepath, speed = 1):
     byps_times_channel_num = byps*channel_num
     byps_tcn_times_speed = byps_times_channel_num * speed
 
+    max_index = int(len(wav_data) / (byps * channel_num * speed))
+
     for k in range(0,channel_num):
         k_times_byps = k * byps
-        for i in range(0, int(len(wav_data) / (byps * channel_num * speed))):
+        for i in range(0, max_index):
             intnum = int.from_bytes(wav_data[i*byps_tcn_times_speed + k_times_byps:i*byps_tcn_times_speed + k_times_byps + byps],'little',signed=True)
-            audio_data[k].append(float(intnum / (2**(bit_depth-1) - 1)))
+            audio_data[k].append(float(intnum / (2**(bit_depth-1))))
+            
+            samples_processed += 1
+            if samples_processed % 500 == 0:
+                progress_bar['value'] = int(samples_processed * 100 / total_samples_to_process)
+                root.update_idletasks()
 
     return (sample_rate, audio_data)
 
@@ -73,7 +110,7 @@ def get_wav_bytes(audio_data, bitdepth=16, samplerate=44100):
                 item = float(item)
             elif type(item) != float:
                 raise TypeError("Sublists must contain floats. Found a " + str(type(item)))
-            if not(item >= -1.0 and item <= 1.0):
+            if item > 1.0 or item < -1.0:
                 raise ValueError("Values must be in range [-1.0, 1.0]")
     for lst in audio_data:
         if len(lst) != len(audio_data[0]):
@@ -101,32 +138,93 @@ def save(audio_data, filepath=None, bitdepth=16, samplerate=44100):
     with open(filepath, "wb") as f:
         f.write(wav_bytes)
 
-if __name__ == "__main__":
-    print("This only works with wav files ¯\_(ツ)_/¯")
-    speed = ""
-    while True:
-        speed = input("speedup factor: ")
-        try:
-            speed = int(speed)
-            if speed < 1:
-                print("speed must be >= 1.")
-                continue
-            break
-        except Exception:
-            continue
+input_folder_path = ""
 
-    input("press enter to select an output file location")
+def input_folder_click():
+    global input_folder_path, label1
+    input_folder_path = filedialog.askdirectory().replace("\\", "/") # windows... sigh
+    label1.config(text=f"Input folder: {input_folder_path}")
+
+def output_path_click_enter(arg):
+    output_path_click()
+
+def output_path_click():
+    global input_folder_path, samples_processed, total_samples_to_process, progress_bar, progress
+    speed = e.get()
+    try:
+        speed = int(speed)
+        if speed < 1:
+            raise Exception()
+    except Exception:
+        messagebox.showerror(title=app_title, message="Input a positive integer.")
+        return
 
     output_path = filedialog.asksaveasfilename(filetypes=[("Wave files", "*.wav")])
+    if output_path == "": return
 
     if not output_path.endswith(".wav"): output_path += ".wav"
+    output_path = output_path.replace("\\", "/")
 
     giant_thing_of_audio = [[]]
 
-    for f in os.listdir():
+    if input_folder_path == "":
+        messagebox.showerror(title=app_title, message="Select an input folder.")
+        return
+
+    # find out how many samples will be processed in total
+    total_samples_to_process = 0
+    for f in os.listdir(input_folder_path):
         if f.lower().endswith(("wav", "wave")):
-            sample_rate, audio_data = parse_sped_up(f, speed)
+            samples = samples_in_file(f"{input_folder_path}/{f}")
+            total_samples_to_process += int(samples / speed)
+    
+    samples_processed = 0
+
+    progress.pack()
+    progress_bar.pack()
+
+    # actually do the speeding up
+    for f in os.listdir(input_folder_path):
+        if f.lower().endswith(("wav", "wave")):
+            progress.config(text=f"Processing {f}...")
+            progress_bar['value'] = int(samples_processed * 100 / total_samples_to_process)
+            root.update_idletasks()
+            sample_rate, audio_data = parse_sped_up(f"{input_folder_path}/{f}", speed)
             for i, item in enumerate(audio_data[0]):
                 giant_thing_of_audio[0].append(item)
 
+    progress.config(text=f"Saving...")
     save(giant_thing_of_audio, output_path)
+
+    
+    progress.config(text=f"Done.")
+    progress_bar['value'] = 100
+
+    messagebox.showinfo(title=app_title, message=f"File \"{output_path.rsplit('/', 1)[1]}\" successfully exported.")
+
+if __name__ == "__main__":
+    button1 = tk.Button(root, text="Select input folder", command=input_folder_click, pady=5)
+    button1.pack()
+
+    label1 = tk.Label(root, text="No input folder selected", pady=5)
+    label1.pack()
+
+    speedup_prompt = tk.Label(root, text="Speedup factor:", pady=5)
+    speedup_prompt.pack()
+
+    e = tk.Entry(root, width=10)
+    e.pack()
+    e.insert(0, "")
+    e.bind('<Return>', output_path_click_enter)
+
+    spacer = tk.Label(root, text=" ")
+    spacer.pack()
+
+    button2 = tk.Button(root, text="Export as wav", command=output_path_click, pady=5)
+    button2.pack()
+
+    progress = tk.Label(root, text="Progress", pady=5)
+
+    progress_bar = ttk.Progressbar(root, orient=HORIZONTAL, length=200, mode="determinate")
+
+    root.mainloop()
