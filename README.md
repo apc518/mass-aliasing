@@ -12,6 +12,6 @@ Run the script with `python /path/to/mass-aliasing` and the UI should be pretty 
 
 # Background
 
-I made this after watching WangleLine's video on using aliasing artifacts to do cool sound design! She asks in the video if anyone knows of a faster way than rendering hours of audio in FL studio, and I figured it wouldn't be too hard to code something!
+I made this after watching [WangleLine's video](https://www.youtube.com/watch?v=U33ejbo3ro4) on using aliasing artifacts to do cool sound design! She asks in the video if anyone knows of a faster way than rendering hours of audio in FL studio, and I figured it wouldn't be too hard to code something!
 
 The faster you want to speed up the audio, the faster it runs. Speeding up the audio by 20 is nearly 10x faster than speeding it up by 2, and this is why its so much better than rendering the tracks in FL (or any other daw). FL studio is processing every single sample of the input audio on export, even though you're going to throw most of them out! This script only processes the samples you'll actually keep, which are a tiny fraction of the total for large speedups.
