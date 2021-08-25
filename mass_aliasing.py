@@ -97,7 +97,7 @@ def parse_sped_up(filepath, speed = 1):
 
     return (sample_rate, audio_data)
 
-def get_wav_bytes(audio_data, bitdepth=16, samplerate=44100):
+def generate_wav_bytes(audio_data, bitdepth=16, samplerate=44100):
     """returns a wav file as a bytearray based on the inputted audio_data
     the audio_data must be a list of lists of floats"""
     if type(audio_data) != list:
@@ -133,7 +133,7 @@ def get_wav_bytes(audio_data, bitdepth=16, samplerate=44100):
 
 def save(audio_data, filepath=None, bitdepth=16, samplerate=44100):
     """saves the bytes of a wav file to disk as an actual wav file"""
-    wav_bytes = get_wav_bytes(audio_data, bitdepth, samplerate)
+    wav_bytes = generate_wav_bytes(audio_data, bitdepth, samplerate)
 
     with open(filepath, "wb") as f:
         f.write(wav_bytes)
