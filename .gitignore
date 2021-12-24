@@ -2,3 +2,4 @@ venv
 .vscode
 .git
 __pycache__
+*.wav
